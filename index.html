@@ -1,1 +1,406 @@
-PLACEHOLDER
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Matrix Flappy</title>
+<style>
+  :root {
+    --green: #00ff41;
+    --bg: #000;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    font-family: 'Courier New', monospace;
+    color: var(--green);
+  }
+  #game-wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+  }
+  canvas {
+    display: block;
+    background: #000;
+    touch-action: none;
+    max-width: 100vw;
+    max-height: 100vh;
+  }
+  #hud {
+    position: absolute;
+    top: max(14px, env(safe-area-inset-top));
+    left: 0; right: 0;
+    text-align: center;
+    pointer-events: none;
+    font-size: 28px;
+    font-weight: bold;
+    text-shadow: 0 0 8px var(--green), 0 0 16px var(--green);
+    letter-spacing: 2px;
+  }
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    background: rgba(0,0,0,0.75);
+    padding: 24px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: clamp(22px, 7vw, 40px);
+    margin: 0 0 6px;
+    text-shadow: 0 0 10px var(--green), 0 0 24px var(--green);
+    letter-spacing: 3px;
+  }
+  #overlay .sub {
+    font-size: clamp(12px, 3.6vw, 15px);
+    color: #4dff8f;
+    margin: 4px 0 22px;
+    opacity: 0.85;
+    max-width: 320px;
+  }
+  #overlay .score-line {
+    font-size: clamp(16px, 4.4vw, 20px);
+    margin-bottom: 22px;
+  }
+  #overlay .score-line b { color: #b6ffce; }
+  button#start-btn {
+    font-family: inherit;
+    font-size: clamp(16px, 4.6vw, 20px);
+    font-weight: bold;
+    letter-spacing: 2px;
+    padding: 14px 34px;
+    background: transparent;
+    color: var(--green);
+    border: 2px solid var(--green);
+    border-radius: 6px;
+    box-shadow: 0 0 12px rgba(0,255,65,0.6), inset 0 0 12px rgba(0,255,65,0.15);
+    cursor: pointer;
+  }
+  button#start-btn:active { background: rgba(0,255,65,0.18); }
+  #footer-hint {
+    position: absolute;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 11px;
+    color: #1f7a3d;
+    letter-spacing: 1px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="game-wrap">
+  <canvas id="c"></canvas>
+  <div id="hud">0</div>
+  <div id="overlay">
+    <h1>MATRIX FLAPPY</h1>
+    <div class="sub">Tap or press SPACE to rise.<br>Weave between the code gates.</div>
+    <div class="score-line" id="score-line"></div>
+    <button id="start-btn">ENTER THE MATRIX</button>
+  </div>
+  <div id="footer-hint">tap anywhere &middot; avoid the pillars</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var hud = document.getElementById('hud');
+  var overlay = document.getElementById('overlay');
+  var startBtn = document.getElementById('start-btn');
+  var scoreLine = document.getElementById('score-line');
+
+  var DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+  var W = 0, H = 0;
+
+  function resize() {
+    var maxW = 480;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var w = Math.min(vw, maxW);
+    var h = vh;
+    W = w; H = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = Math.floor(w * DPR);
+    canvas.height = Math.floor(h * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- Matrix rain background ----------
+  var GLYPHS = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789";
+  var rainCols = [];
+  function setupRain() {
+    var fontSize = 16;
+    var cols = Math.ceil(W / fontSize);
+    rainCols = [];
+    for (var i = 0; i < cols; i++) {
+      rainCols.push({
+        x: i * fontSize,
+        y: Math.random() * -H,
+        speed: 2 + Math.random() * 4,
+        fontSize: fontSize
+      });
+    }
+  }
+  setupRain();
+  window.addEventListener('resize', setupRain);
+
+  function drawRain() {
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = '15px monospace';
+    for (var i = 0; i < rainCols.length; i++) {
+      var col = rainCols[i];
+      var ch = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+      ctx.fillStyle = 'rgba(0,255,65,0.55)';
+      ctx.fillText(ch, col.x, col.y);
+      col.y += col.speed;
+      if (col.y > H + 20) {
+        col.y = Math.random() * -100;
+        col.speed = 2 + Math.random() * 4;
+      }
+    }
+  }
+
+  // ---------- Game constants ----------
+  var GRAVITY = 1500;       // px/s^2
+  var FLAP_VELOCITY = -430; // px/s
+  var PIPE_GAP = 190;
+  var PIPE_WIDTH = 62;
+  var PIPE_SPEED = 150;     // px/s
+  var PIPE_INTERVAL = 1500; // ms
+  var BIRD_SIZE = 28;
+  var BIRD_X_RATIO = 0.28;
+
+  var state = 'ready'; // ready | playing | dead
+  var bird, pipes, score, best, lastTime, spawnTimer, flashTimer;
+
+  best = 0;
+  try {
+    var saved = localStorage.getItem('matrixFlappyBest');
+    if (saved) best = parseInt(saved, 10) || 0;
+  } catch (e) {}
+
+  function resetGame() {
+    bird = {
+      x: W * BIRD_X_RATIO,
+      y: H * 0.4,
+      vy: 0,
+      rot: 0
+    };
+    pipes = [];
+    score = 0;
+    spawnTimer = 0;
+    flashTimer = 0;
+    hud.textContent = '0';
+  }
+  resetGame();
+
+  function spawnPipe() {
+    var margin = 60;
+    var gapCenter = margin + Math.random() * (H - margin * 2 - PIPE_GAP);
+    pipes.push({
+      x: W + PIPE_WIDTH,
+      gapTop: gapCenter - PIPE_GAP / 2,
+      gapBottom: gapCenter + PIPE_GAP / 2,
+      passed: false
+    });
+  }
+
+  function flap() {
+    if (state === 'ready') {
+      startGame();
+      return;
+    }
+    if (state === 'dead') return;
+    bird.vy = FLAP_VELOCITY;
+  }
+
+  function startGame() {
+    resetGame();
+    state = 'playing';
+    overlay.classList.add('hidden');
+  }
+
+  function die() {
+    if (state !== 'playing') return;
+    state = 'dead';
+    flashTimer = 120;
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('matrixFlappyBest', String(best)); } catch (e) {}
+    }
+    setTimeout(function () {
+      scoreLine.innerHTML = 'SCORE <b>' + score + '</b> &nbsp;|&nbsp; BEST <b>' + best + '</b>';
+      startBtn.textContent = 'RE-ENTER';
+      overlay.classList.remove('hidden');
+      state = 'ready';
+    }, 500);
+  }
+
+  function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  function update(dt) {
+    if (state === 'playing') {
+      bird.vy += GRAVITY * dt;
+      bird.y += bird.vy * dt;
+      bird.rot = Math.max(-0.5, Math.min(1.1, bird.vy / 500));
+
+      spawnTimer += dt * 1000;
+      if (spawnTimer >= PIPE_INTERVAL) {
+        spawnTimer = 0;
+        spawnPipe();
+      }
+
+      for (var i = pipes.length - 1; i >= 0; i--) {
+        var p = pipes[i];
+        p.x -= PIPE_SPEED * dt;
+
+        if (!p.passed && p.x + PIPE_WIDTH < bird.x) {
+          p.passed = true;
+          score++;
+          hud.textContent = String(score);
+        }
+
+        var bx = bird.x - BIRD_SIZE / 2;
+        var by = bird.y - BIRD_SIZE / 2;
+        if (rectsOverlap(bx, by, BIRD_SIZE, BIRD_SIZE, p.x, 0, PIPE_WIDTH, p.gapTop) ||
+            rectsOverlap(bx, by, BIRD_SIZE, BIRD_SIZE, p.x, p.gapBottom, PIPE_WIDTH, H - p.gapBottom)) {
+          die();
+        }
+
+        if (p.x + PIPE_WIDTH < -10) {
+          pipes.splice(i, 1);
+        }
+      }
+
+      if (bird.y - BIRD_SIZE / 2 < 0) {
+        bird.y = BIRD_SIZE / 2;
+        bird.vy = 0;
+      }
+      if (bird.y + BIRD_SIZE / 2 > H) {
+        bird.y = H - BIRD_SIZE / 2;
+        die();
+      }
+    } else if (state === 'dead') {
+      bird.vy += GRAVITY * dt;
+      bird.y += bird.vy * dt;
+      if (bird.y + BIRD_SIZE / 2 > H) {
+        bird.y = H - BIRD_SIZE / 2;
+      }
+    }
+    if (flashTimer > 0) flashTimer -= dt * 1000;
+  }
+
+  function drawPipe(p) {
+    ctx.save();
+    ctx.shadowColor = '#00ff41';
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = '#00ff41';
+    ctx.lineWidth = 2;
+    ctx.fillStyle = 'rgba(0,40,10,0.55)';
+
+    ctx.fillRect(p.x, 0, PIPE_WIDTH, p.gapTop);
+    ctx.strokeRect(p.x, 0, PIPE_WIDTH, p.gapTop);
+    ctx.fillRect(p.x, p.gapBottom, PIPE_WIDTH, H - p.gapBottom);
+    ctx.strokeRect(p.x, p.gapBottom, PIPE_WIDTH, H - p.gapBottom);
+
+    ctx.font = '11px monospace';
+    ctx.fillStyle = 'rgba(0,255,65,0.5)';
+    for (var y = 10; y < p.gapTop; y += 16) {
+      var ch = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+      ctx.fillText(ch, p.x + 6, y);
+    }
+    for (var y2 = p.gapBottom + 16; y2 < H; y2 += 16) {
+      var ch2 = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+      ctx.fillText(ch2, p.x + 6, y2);
+    }
+    ctx.restore();
+  }
+
+  function drawBird() {
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(bird.rot);
+    ctx.shadowColor = '#00ff41';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#00ff41';
+    ctx.strokeStyle = '#eafff1';
+    ctx.lineWidth = 1.5;
+    var s = BIRD_SIZE;
+    ctx.beginPath();
+    ctx.moveTo(-s/2, -s/2);
+    ctx.lineTo(s/2, 0);
+    ctx.lineTo(-s/2, s/2);
+    ctx.lineTo(-s/4, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    drawRain();
+
+    for (var i = 0; i < pipes.length; i++) drawPipe(pipes[i]);
+    drawBird();
+
+    if (flashTimer > 0) {
+      ctx.fillStyle = 'rgba(255,0,0,' + (0.25 * (flashTimer / 120)) + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    if (state === 'ready' && pipes.length === 0) {
+      ctx.save();
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = 'rgba(0,255,65,0.6)';
+      ctx.textAlign = 'center';
+      ctx.fillText('BEST: ' + best, W / 2, H - 30);
+      ctx.restore();
+    }
+  }
+
+  lastTime = performance.now();
+  function loop(now) {
+    var dt = Math.min(0.033, (now - lastTime) / 1000);
+    lastTime = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---------- Input ----------
+  function onTap(e) {
+    if (e) e.preventDefault();
+    flap();
+  }
+  canvas.addEventListener('touchstart', onTap, { passive: false });
+  canvas.addEventListener('mousedown', onTap);
+  startBtn.addEventListener('touchstart', function (e) { e.preventDefault(); e.stopPropagation(); startGame(); }, { passive: false });
+  startBtn.addEventListener('click', function (e) { e.stopPropagation(); startGame(); });
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space' || e.code === 'ArrowUp') {
+      e.preventDefault();
+      flap();
+    }
+  });
+  document.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+})();
+</script>
+</body>
+</html>
